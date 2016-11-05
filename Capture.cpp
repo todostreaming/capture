@@ -64,7 +64,7 @@ void alarm_handler (int sig)
 {
     std::cerr << "Timeout overcome !!!!\n";
     std::cerr << "Badly Exiting ....\n";
-    closefiles();
+    //closefiles();
     exit (1);
 }
 
