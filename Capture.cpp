@@ -32,41 +32,112 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <csignal>
+#include <iostream>
 
 #include "DeckLinkAPI.h"
 #include "Capture.h"
 #include "Config.h"
 
+#define TIMEOUT			1   // 1 second timeout
+
 static pthread_mutex_t	g_sleepMutex;
 static pthread_cond_t	g_sleepCond;
-static int				g_videoOutputFile = -1;
-static int				g_audioOutputFile = -1;
 static bool				g_do_exit = false;
 
 static BMDConfig		g_config;
 
 static IDeckLinkInput*	g_deckLinkInput = NULL;
+static IDeckLink*		deckLink = NULL;
+static FILE 			*fp_audio = NULL;
+static FILE 			*fp_video = NULL;
 
 static unsigned long	g_frameCount = 0;
 
-DeckLinkCaptureDelegate::DeckLinkCaptureDelegate() : m_refCount(1)
+void closefiles(){
+
+	if (fp_audio != NULL) fclose(fp_audio);
+    if (fp_video != NULL) fclose(fp_video);
+
+}
+
+void alarm_handler (int sig)
 {
+    std::cerr << "Timeout overcome !!!!\n";
+    std::cerr << "Badly Exiting ....\n";
+    closefiles();
+    exit (1);
+}
+
+void cleanup ()
+{
+    HRESULT result;
+
+    std::cerr << "Entering cleanup()...\n";
+
+    // Release resources when we've finished
+    // with it to prevent leaks
+    if (g_deckLinkInput != NULL)
+    {
+        result = g_deckLinkInput->StopStreams ();
+        std::cerr << "StopStreams() returned " << result << "\n";
+        usleep (50);
+
+        result = g_deckLinkInput->DisableVideoInput();
+        std::cerr << "DisableVideoInput() returned " << result << "\n";
+        usleep(50);
+
+
+        std::cerr << "releasing IDeckLinkInput...\n";
+        g_deckLinkInput->Release();
+        g_deckLinkInput = NULL;
+        std::cerr << "released IDeckLinkInput.\n";
+    }
+
+    if (deckLink != NULL)
+    {
+        std::cerr << "releasing IDeckLink instance...\n";
+        deckLink->Release ();
+        deckLink = NULL;
+        std::cerr << "released IDeckLink instance.\n";
+    }
+
+    closefiles();
+    std::cerr << "Done with cleanup()\n";
+    std::cerr << "Fine Exiting ....\n";
+}
+
+DeckLinkCaptureDelegate::DeckLinkCaptureDelegate() : m_refCount(0)
+{
+	pthread_mutex_init(&m_mutex, NULL);
+}
+
+DeckLinkCaptureDelegate::~DeckLinkCaptureDelegate()
+{
+	pthread_mutex_destroy(&m_mutex);
 }
 
 ULONG DeckLinkCaptureDelegate::AddRef(void)
 {
-	return __sync_add_and_fetch(&m_refCount, 1);
+	pthread_mutex_lock(&m_mutex);
+	m_refCount++;
+	pthread_mutex_unlock(&m_mutex);
+
+	return (ULONG)m_refCount;
 }
 
 ULONG DeckLinkCaptureDelegate::Release(void)
 {
-	int32_t newRefValue = __sync_sub_and_fetch(&m_refCount, 1);
-	if (newRefValue == 0)
+	pthread_mutex_lock(&m_mutex);
+	m_refCount--;
+	pthread_mutex_unlock(&m_mutex);
+
+	if (m_refCount == 0)
 	{
 		delete this;
 		return 0;
 	}
-	return newRefValue;
+
+	return (ULONG)m_refCount;
 }
 
 HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame* videoFrame, IDeckLinkAudioInputPacket* audioFrame)
@@ -76,9 +147,23 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	void*								frameBytes;
 	void*								audioFrameBytes;
 
+    bool video_signal;
+
+    alarm (TIMEOUT);
 	// Handle Video Frame
 	if (videoFrame)
 	{
+        if (fp_video == NULL)
+        {
+            if (!(fp_video = fopen (g_config.m_videoOutputFile, "w+")))
+            {
+                std::cerr << "Error: could not open video stream file '"
+                            << g_config.m_videoOutputFile << "': "
+                            << "\n";
+        		cleanup();
+                exit (1);
+            }
+        }
 		// If 3D mode is enabled we retreive the 3D extensions interface which gives.
 		// us access to the right eye frame by calling GetFrameForRightEye() .
 		if ( (videoFrame->QueryInterface(IID_IDeckLinkVideoFrame3DExtensions, (void **) &threeDExtensions) != S_OK) ||
@@ -90,12 +175,14 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		if (threeDExtensions)
 			threeDExtensions->Release();
 
-		if (videoFrame->GetFlags() & bmdFrameHasNoInputSource)
 		{
-			printf("Frame received (#%lu) - No input signal detected\n", g_frameCount);
-		}
-		else
-		{
+			if (videoFrame->GetFlags() & bmdFrameHasNoInputSource)
+			{
+				video_signal = false;
+				fprintf(stderr,"Frame captured (#%lu) - No input signal detected\n", g_frameCount);
+			}else{
+				video_signal = true;
+			}
 			const char *timecodeString = NULL;
 			if (g_config.m_timecodeFormat != 0)
 			{
@@ -106,25 +193,24 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 				}
 			}
 
-			printf("Frame received (#%lu) [%s] - %s - Size: %li bytes\n",
-				g_frameCount,
-				timecodeString != NULL ? timecodeString : "No timecode",
-				rightEyeFrame != NULL ? "Valid Frame (3D left/right)" : "Valid Frame",
-				videoFrame->GetRowBytes() * videoFrame->GetHeight());
+		    if (g_frameCount % 10 == 0 && video_signal){
+				fprintf(stderr,"Frame captured (#%lu) - %s - Size: %li bytes\n",
+					g_frameCount,
+					rightEyeFrame != NULL ? "Valid Frame (3D left/right)" : "Valid Frame",
+					videoFrame->GetRowBytes() * videoFrame->GetHeight());
+		    }
 
-			if (timecodeString)
-				free((void*)timecodeString);
+		    if (timecodeString) free((void*)timecodeString);
 
-			if (g_videoOutputFile != -1)
+			videoFrame->GetBytes(&frameBytes);
+			fwrite (frameBytes, 1, videoFrame->GetRowBytes() * videoFrame->GetHeight(), fp_video);
+			fflush (fp_video);
+
+			if (rightEyeFrame)
 			{
-				videoFrame->GetBytes(&frameBytes);
-				write(g_videoOutputFile, frameBytes, videoFrame->GetRowBytes() * videoFrame->GetHeight());
-
-				if (rightEyeFrame)
-				{
-					rightEyeFrame->GetBytes(&frameBytes);
-					write(g_videoOutputFile, frameBytes, videoFrame->GetRowBytes() * videoFrame->GetHeight());
-				}
+				rightEyeFrame->GetBytes(&frameBytes);
+				fwrite (frameBytes, 1, videoFrame->GetRowBytes() * videoFrame->GetHeight(), fp_video);
+				fflush (fp_video);
 			}
 		}
 
@@ -132,16 +218,36 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			rightEyeFrame->Release();
 
 		g_frameCount++;
+	}else{
+		// videoFrame = NULL
+		std::cerr << "NULL Video ...\n";
+		cleanup();
+		exit(1);
 	}
 
 	// Handle Audio Frame
 	if (audioFrame)
 	{
-		if (g_audioOutputFile != -1)
-		{
-			audioFrame->GetBytes(&audioFrameBytes);
-			write(g_audioOutputFile, audioFrameBytes, audioFrame->GetSampleFrameCount() * g_config.m_audioChannels * (g_config.m_audioSampleDepth / 8));
-		}
+        if (fp_audio == NULL)
+        {
+			if (!(fp_audio = fopen (g_config.m_audioOutputFile, "w+")))
+			{
+				std::cerr << "Error: could not open audio stream file '"
+							<< g_config.m_audioOutputFile << "': "
+							<< "\n";
+				cleanup();
+				exit (1);
+			}
+        }
+		audioFrame->GetBytes(&audioFrameBytes);
+        fwrite (audioFrameBytes, 1, audioFrame->GetSampleFrameCount() * g_config.m_audioChannels * (g_config.m_audioSampleDepth / 8), fp_audio);
+        fflush (fp_audio);
+
+	}else{
+		// audioFrame = NULL
+		std::cerr << "NULL Audio ...\n";
+		cleanup();
+		exit(1);
 	}
 
 	if (g_config.m_maxFrames > 0 && videoFrame && g_frameCount >= g_config.m_maxFrames)
@@ -165,7 +271,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFormatChanged(BMDVideoInputFormatChan
 		pixelFormat = bmdFormat10BitRGB;
 
 	mode->GetName((const char**)&displayModeName);
-	printf("Video format changed to %s %s\n", displayModeName, formatFlags & bmdDetectedVideoInputRGB444 ? "RGB" : "YUV");
+	fprintf(stderr,"Video format changed to %s %s\n", displayModeName, formatFlags & bmdDetectedVideoInputRGB444 ? "RGB" : "YUV");
 
 	if (displayModeName)
 		free(displayModeName);
@@ -190,7 +296,7 @@ bail:
 
 static void sigfunc(int signum)
 {
-	if (signum == SIGINT || signum == SIGTERM)
+	if (signum == SIGINT || signum == SIGTERM) // Ctrl-c and usual kill (15)
 		g_do_exit = true;
 
 	pthread_cond_signal(&g_sleepCond);
@@ -202,8 +308,10 @@ int main(int argc, char *argv[])
 	int								exitStatus = 1;
 	int								idx;
 
+	IDeckLinkConfiguration *deckLinkConfiguration = NULL;
+
+
 	IDeckLinkIterator*				deckLinkIterator = NULL;
-	IDeckLink*						deckLink = NULL;
 
 	IDeckLinkAttributes*			deckLinkAttributes = NULL;
 	bool							formatDetectionSupported;
@@ -218,9 +326,9 @@ int main(int argc, char *argv[])
 	pthread_mutex_init(&g_sleepMutex, NULL);
 	pthread_cond_init(&g_sleepCond, NULL);
 
-	signal(SIGINT, sigfunc);
-	signal(SIGTERM, sigfunc);
-	signal(SIGHUP, sigfunc);
+	signal(SIGINT, sigfunc); // Ctrl-C
+	signal(SIGTERM, sigfunc); // usual kill (15)
+	signal(SIGHUP, sigfunc); // reload hanged
 
 	// Process the command line arguments
 	if (!g_config.ParseArguments(argc, argv))
@@ -338,26 +446,71 @@ int main(int argc, char *argv[])
 	delegate = new DeckLinkCaptureDelegate();
 	g_deckLinkInput->SetCallback(delegate);
 
-	// Open output files
-	if (g_config.m_videoOutputFile != NULL)
-	{
-		g_videoOutputFile = open(g_config.m_videoOutputFile, O_WRONLY|O_CREAT|O_TRUNC, 0664);
-		if (g_videoOutputFile < 0)
-		{
-			fprintf(stderr, "Could not open video output file \"%s\"\n", g_config.m_videoOutputFile);
-			goto bail;
-		}
-	}
+	// ONLY .TSTS =======================================================>>>>>>
+    // Query the DeckLink for its configuration interface
+    result = g_deckLinkInput->QueryInterface (IID_IDeckLinkConfiguration,
+                        (void **) &deckLinkConfiguration);
+    if (result != S_OK)
+    {
+    	g_deckLinkInput->Release ();
+        displayMode->Release ();
+        fprintf(stderr, "Could not obtain the IDeckLinkConfiguration interface  \n ");
+        exit (1);
+    }
+    BMDVideoConnection vinput;
+    switch (g_config.m_video_input_num)
+    {
+		case 1:
+			vinput = bmdVideoConnectionComposite; fprintf(stderr, "Video Input Selected = Composite  \n ");
+			break;
+		case 2:
+			vinput = bmdVideoConnectionComponent; fprintf(stderr, "Video Input Selected = Components  \n ");
+			break;
+        case 3:
+            vinput = bmdVideoConnectionHDMI; fprintf(stderr, "Video Input Selected = HDMI  \n ");
+            break;
+        case 4:
+            vinput = bmdVideoConnectionSDI; fprintf(stderr, "Video Input Selected = SDI  \n ");
+            break;
+        case 5:
+            vinput = bmdVideoConnectionOpticalSDI; fprintf(stderr, "Video Input Selected = Optical SDI  \n ");
+            break;
+        case 6:
+            vinput = bmdVideoConnectionSVideo; fprintf(stderr, "Video Input Selected = S-Video  \n ");
+            break;
+        default:
+            break;
+    }
 
-	if (g_config.m_audioOutputFile != NULL)
-	{
-		g_audioOutputFile = open(g_config.m_audioOutputFile, O_WRONLY|O_CREAT|O_TRUNC, 0664);
-		if (g_audioOutputFile < 0)
-		{
-			fprintf(stderr, "Could not open audio output file \"%s\"\n", g_config.m_audioOutputFile);
-			goto bail;
-		}
-	}
+    result = deckLinkConfiguration->SetInt(bmdDeckLinkConfigVideoInputConnection, vinput );
+    if (result != S_OK)
+    {
+        fprintf(stderr, "Error: could not set video input  \n ");
+        exit (1);
+    }
+    BMDVideoConnection ainput;
+    switch (g_config.m_audio_input_num)
+    {
+		case 1:
+			ainput = bmdAudioConnectionAnalog; fprintf(stderr, "Audio Input Selected = Analog  \n ");
+			break;
+        case 2:
+            ainput = bmdAudioConnectionEmbedded; fprintf(stderr, "Audio Input Selected = Embedded (HDMI/SDI)  \n ");
+            break;
+        case 3:
+            ainput = bmdAudioConnectionAESEBU; fprintf(stderr, "Audio Input Selected = AES/EBU  \n ");
+            break;
+        default:
+            break;
+    }
+
+    result = deckLinkConfiguration->SetInt(bmdDeckLinkConfigAudioInputConnection, ainput);
+    if (result != S_OK)
+    {
+        fprintf(stderr, "Error: could not set audio input  \n ");
+        exit (1);
+    }
+	// ONLY .TSTS ======== END ========================================>>>>>>
 
 	// Block main thread until signal occurs
 	while (!g_do_exit)
@@ -374,7 +527,9 @@ int main(int argc, char *argv[])
 		if (result != S_OK)
 			goto bail;
 
-		result = g_deckLinkInput->StartStreams();
+	    signal (SIGALRM, alarm_handler);
+
+	    result = g_deckLinkInput->StartStreams(); // VideoInputFrameArrived, VideoInputFormatChanged will be called as different threads from now on (capturing .....)
 		if (result != S_OK)
 			goto bail;
 
@@ -382,7 +537,7 @@ int main(int argc, char *argv[])
 		exitStatus = 0;
 
 		pthread_mutex_lock(&g_sleepMutex);
-		pthread_cond_wait(&g_sleepCond, &g_sleepMutex);
+		pthread_cond_wait(&g_sleepCond, &g_sleepMutex); // will wait sleeping there until this happens: pthread_cond_signal(&g_sleepCond);
 		pthread_mutex_unlock(&g_sleepMutex);
 
 		fprintf(stderr, "Stopping Capture\n");
@@ -392,12 +547,6 @@ int main(int argc, char *argv[])
 	}
 
 bail:
-	if (g_videoOutputFile != 0)
-		close(g_videoOutputFile);
-
-	if (g_audioOutputFile != 0)
-		close(g_audioOutputFile);
-
 	if (displayModeName != NULL)
 		free(displayModeName);
 
@@ -406,9 +555,6 @@ bail:
 
 	if (displayModeIterator != NULL)
 		displayModeIterator->Release();
-
-	if (delegate != NULL)
-		delegate->Release();
 
 	if (g_deckLinkInput != NULL)
 	{
@@ -424,6 +570,9 @@ bail:
 
 	if (deckLinkIterator != NULL)
 		deckLinkIterator->Release();
+
+	closefiles();
+	fprintf(stderr, "Fine Exiting ...\n");
 
 	return exitStatus;
 }

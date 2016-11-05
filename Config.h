@@ -48,6 +48,9 @@ public:
 
 	int						m_maxFrames;
 
+	int 					m_video_input_num; //.TSTS
+	int 					m_audio_input_num; //.TSTS
+
 	BMDVideoInputFlags		m_inputFlags;
 	BMDPixelFormat			m_pixelFormat;
 	BMDTimecodeFormat		m_timecodeFormat;

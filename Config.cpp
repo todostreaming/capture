@@ -44,7 +44,9 @@ BMDConfig::BMDConfig() :
 	m_videoOutputFile(),
 	m_audioOutputFile(),
 	m_deckLinkName(),
-	m_displayModeName()
+	m_displayModeName(),
+	m_video_input_num(1), //.TSTS
+	m_audio_input_num(1)  //.TSTS
 {
 }
 
@@ -62,10 +64,18 @@ bool BMDConfig::ParseArguments(int argc,  char** argv)
 	int		ch;
 	bool	displayHelp = false;
 
-	while ((ch = getopt(argc, argv, "d:?h3c:s:v:a:m:n:p:t:")) != -1)
+	while ((ch = getopt(argc, argv, "d:?h3c:s:v:a:m:n:p:t:V:A:")) != -1)
 	{
 		switch (ch)
 		{
+			case 'V':
+				m_video_input_num = atoi(optarg); //.TSTS
+				break;
+
+			case 'A':
+				m_audio_input_num = atoi(optarg); //.TSTS
+				break;
+
 			case 'd':
 				m_deckLinkIndex = atoi(optarg);
 				break;
@@ -376,6 +386,17 @@ bail:
 		"         rp188:  RP 188\n"
 		"         vitc:   VITC\n"
 		"         serial: Serial Timecode\n"
+		"    -V <vid input>       Filename raw video will be written to\n"
+		"    		1: Composite\n"
+		"    		2: Components\n"
+		"    		3: HDMI\n"
+		"    		4: SDI\n"
+		"    		5: Optical SDI\n"
+		"    		6: S-Video\n"
+		"    -A <aud input>       Filename raw video will be written to\n"
+		"    		1: Analog\n"
+		"    		2: Embedded (HDMI/SDI)\n"
+		"    		3: AES/EBU\n"
 		"    -v <filename>        Filename raw video will be written to\n"
 		"    -a <filename>        Filename raw audio will be written to\n"
 		"    -c <channels>        Audio Channels (2, 8 or 16 - default is 2)\n"
