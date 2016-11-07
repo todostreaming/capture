@@ -62,7 +62,7 @@ void closefiles(){
 
 void alarm_handler (int sig)
 {
-    std::cerr << "Timeout overcome !!!!\n";
+    std::cerr << "\nTimeout overcome !!!!\n";
     std::cerr << "Badly Exiting ....\n";
     //closefiles();
     exit (1);
@@ -149,6 +149,11 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
     bool video_signal;
 
+    if (videoFrame != NULL)
+    {
+    	videoFrame->AddRef ();
+    }
+
     alarm (TIMEOUT);
 	// Handle Video Frame
 	if (videoFrame)
@@ -175,54 +180,45 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		if (threeDExtensions)
 			threeDExtensions->Release();
 
+		if (videoFrame->GetFlags() & bmdFrameHasNoInputSource)
 		{
-			if (videoFrame->GetFlags() & bmdFrameHasNoInputSource)
+			video_signal = false;
+			fprintf(stderr,"Video captured (#%lu) - No input signal detected\n", g_frameCount);
+		}else{
+			video_signal = true;
+		}
+		const char *timecodeString = NULL;
+		if (g_config.m_timecodeFormat != 0)
+		{
+			IDeckLinkTimecode *timecode;
+			if (videoFrame->GetTimecode(g_config.m_timecodeFormat, &timecode) == S_OK)
 			{
-				video_signal = false;
-				fprintf(stderr,"Frame captured (#%lu) - No input signal detected\n", g_frameCount);
-			}else{
-				video_signal = true;
+				timecode->GetString(&timecodeString);
 			}
-			const char *timecodeString = NULL;
-			if (g_config.m_timecodeFormat != 0)
-			{
-				IDeckLinkTimecode *timecode;
-				if (videoFrame->GetTimecode(g_config.m_timecodeFormat, &timecode) == S_OK)
-				{
-					timecode->GetString(&timecodeString);
-				}
-			}
+		}
+	    if (g_frameCount % 10 == 0 && video_signal){
+			fprintf(stderr,"Video captured (#%lu) - %s - Size: %li bytes\n",
+				g_frameCount,
+				rightEyeFrame != NULL ? "Valid Frame (3D left/right)" : "Valid Frame",
+				videoFrame->GetRowBytes() * videoFrame->GetHeight());
+	    }
+	    if (timecodeString) free((void*)timecodeString);
 
-		    if (g_frameCount % 10 == 0 && video_signal){
-				fprintf(stderr,"Frame captured (#%lu) - %s - Size: %li bytes\n",
-					g_frameCount,
-					rightEyeFrame != NULL ? "Valid Frame (3D left/right)" : "Valid Frame",
-					videoFrame->GetRowBytes() * videoFrame->GetHeight());
-		    }
+		videoFrame->GetBytes(&frameBytes);
+		fwrite (frameBytes, 1, videoFrame->GetRowBytes() * videoFrame->GetHeight(), fp_video);
+		fflush (fp_video);
 
-		    if (timecodeString) free((void*)timecodeString);
-
-			videoFrame->GetBytes(&frameBytes);
+		if (rightEyeFrame)
+		{
+			rightEyeFrame->GetBytes(&frameBytes);
 			fwrite (frameBytes, 1, videoFrame->GetRowBytes() * videoFrame->GetHeight(), fp_video);
 			fflush (fp_video);
-
-			if (rightEyeFrame)
-			{
-				rightEyeFrame->GetBytes(&frameBytes);
-				fwrite (frameBytes, 1, videoFrame->GetRowBytes() * videoFrame->GetHeight(), fp_video);
-				fflush (fp_video);
-			}
 		}
 
 		if (rightEyeFrame)
 			rightEyeFrame->Release();
 
 		g_frameCount++;
-	}else{
-		// videoFrame = NULL
-		std::cerr << "NULL Video ...\n";
-		cleanup();
-		exit(1);
 	}
 
 	// Handle Audio Frame
@@ -243,12 +239,12 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
         fwrite (audioFrameBytes, 1, audioFrame->GetSampleFrameCount() * g_config.m_audioChannels * (g_config.m_audioSampleDepth / 8), fp_audio);
         fflush (fp_audio);
 
-	}else{
-		// audioFrame = NULL
-		std::cerr << "NULL Audio ...\n";
-		cleanup();
-		exit(1);
 	}
+
+    if (videoFrame != NULL)
+    {
+    	videoFrame->Release ();
+    }
 
 	if (g_config.m_maxFrames > 0 && videoFrame && g_frameCount >= g_config.m_maxFrames)
 	{
@@ -261,36 +257,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 HRESULT DeckLinkCaptureDelegate::VideoInputFormatChanged(BMDVideoInputFormatChangedEvents events, IDeckLinkDisplayMode *mode, BMDDetectedVideoInputFormatFlags formatFlags)
 {
-	// This only gets called if bmdVideoInputEnableFormatDetection was set
-	// when enabling video input
-	HRESULT	result;
-	char*	displayModeName = NULL;
-	BMDPixelFormat	pixelFormat = bmdFormat10BitYUV;
-
-	if (formatFlags & bmdDetectedVideoInputRGB444)
-		pixelFormat = bmdFormat10BitRGB;
-
-	mode->GetName((const char**)&displayModeName);
-	fprintf(stderr,"Video format changed to %s %s\n", displayModeName, formatFlags & bmdDetectedVideoInputRGB444 ? "RGB" : "YUV");
-
-	if (displayModeName)
-		free(displayModeName);
-
-	if (g_deckLinkInput)
-	{
-		g_deckLinkInput->StopStreams();
-
-		result = g_deckLinkInput->EnableVideoInput(mode->GetDisplayMode(), pixelFormat, g_config.m_inputFlags);
-		if (result != S_OK)
-		{
-			fprintf(stderr, "Failed to switch video mode\n");
-			goto bail;
-		}
-
-		g_deckLinkInput->StartStreams();
-	}
-
-bail:
 	return S_OK;
 }
 
@@ -513,6 +479,7 @@ int main(int argc, char *argv[])
 	// ONLY .TSTS ======== END ========================================>>>>>>
 
 	// Block main thread until signal occurs
+    signal (SIGALRM, alarm_handler);
 	while (!g_do_exit)
 	{
 		// Start capturing
@@ -527,8 +494,7 @@ int main(int argc, char *argv[])
 		if (result != S_OK)
 			goto bail;
 
-	    signal (SIGALRM, alarm_handler);
-
+		fprintf(stderr, "Starting Capture\n");
 	    result = g_deckLinkInput->StartStreams(); // VideoInputFrameArrived, VideoInputFormatChanged will be called as different threads from now on (capturing .....)
 		if (result != S_OK)
 			goto bail;
