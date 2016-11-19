@@ -78,15 +78,6 @@ void cleanup ()
     // with it to prevent leaks
     if (g_deckLinkInput != NULL)
     {
-        result = g_deckLinkInput->StopStreams ();
-        std::cerr << "StopStreams() returned " << result << "\n";
-        usleep (50);
-
-        result = g_deckLinkInput->DisableVideoInput();
-        std::cerr << "DisableVideoInput() returned " << result << "\n";
-        usleep(50);
-
-
         std::cerr << "releasing IDeckLinkInput...\n";
         g_deckLinkInput->Release();
         g_deckLinkInput = NULL;
