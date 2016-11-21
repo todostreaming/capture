@@ -149,15 +149,20 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
     bool video_signal;
 
-    if (videoFrame != NULL)
-    {
-    	videoFrame->AddRef ();
-    }
+    BMDTimeScale    timeScale = 1000; // milliseconds (ticks per second)
+    BMDTimeValue    frameTime = 0;
+    BMDTimeValue    frameDuration = 0;
+    BMDTimeValue    packetTime = 0;
+    static int64_t  video_pts, audio_pts;
 
     alarm (TIMEOUT);
 	// Handle Video Frame
 	if (videoFrame)
 	{
+		videoFrame->AddRef();
+		videoFrame->GetStreamTime(&frameTime, &frameDuration, timeScale);
+		video_pts = frameTime;
+
         if (fp_video == NULL)
         {
             if (!(fp_video = fopen (g_config.m_videoOutputFile, "w+")))
@@ -219,11 +224,15 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			rightEyeFrame->Release();
 
 		g_frameCount++;
+		videoFrame->Release();
 	}
 
 	// Handle Audio Frame
 	if (audioFrame)
 	{
+		audioFrame->GetPacketTime(&packetTime, timeScale);
+		audio_pts = packetTime;
+
         if (fp_audio == NULL)
         {
 			if (!(fp_audio = fopen (g_config.m_audioOutputFile, "w+")))
@@ -241,10 +250,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 	}
 
-    if (videoFrame != NULL)
-    {
-    	videoFrame->Release ();
-    }
+	fprintf(stderr, "Audio: %lu Video: %lu, A-V: %ld\n", audio_pts, video_pts, audio_pts - video_pts); // A/V sync
 
 	if (g_config.m_maxFrames > 0 && videoFrame && g_frameCount >= g_config.m_maxFrames)
 	{
