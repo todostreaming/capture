@@ -241,7 +241,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 	}
 
-	fprintf(stderr, "Audio: %lu Video: %lu, A-V: %ld\n", audio_pts, video_pts, audio_pts - video_pts); // A/V sync
+	fprintf(stderr, "Audio(ms): %lu Video(ms): %lu, A-V: %ld ms\n", audio_pts, video_pts, audio_pts - video_pts); // A/V sync < 200 ms plz !!!
 
 	if (g_config.m_maxFrames > 0 && videoFrame && g_frameCount >= g_config.m_maxFrames)
 	{
