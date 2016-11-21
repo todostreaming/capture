@@ -78,15 +78,6 @@ void cleanup ()
     // with it to prevent leaks
     if (g_deckLinkInput != NULL)
     {
-        result = g_deckLinkInput->StopStreams ();
-        std::cerr << "StopStreams() returned " << result << "\n";
-        usleep (50);
-
-        result = g_deckLinkInput->DisableVideoInput();
-        std::cerr << "DisableVideoInput() returned " << result << "\n";
-        usleep(50);
-
-
         std::cerr << "releasing IDeckLinkInput...\n";
         g_deckLinkInput->Release();
         g_deckLinkInput = NULL;
@@ -484,28 +475,27 @@ int main(int argc, char *argv[])
     }
 	// ONLY .TSTS ======== END ========================================>>>>>>
 
+	// Start capture configuration
+	result = g_deckLinkInput->EnableVideoInput(displayMode->GetDisplayMode(), g_config.m_pixelFormat, g_config.m_inputFlags);
+	if (result != S_OK)
+	{
+		fprintf(stderr, "Failed to enable video input. Is another application using the card?\n");
+		goto bail;
+	}
+
+	result = g_deckLinkInput->EnableAudioInput(bmdAudioSampleRate48kHz, g_config.m_audioSampleDepth, g_config.m_audioChannels);
+	if (result != S_OK)
+		goto bail;
+
 	// Block main thread until signal occurs
     signal (SIGALRM, alarm_handler);
 	while (!g_do_exit)
 	{
-		// Start capturing
-		result = g_deckLinkInput->EnableVideoInput(displayMode->GetDisplayMode(), g_config.m_pixelFormat, g_config.m_inputFlags);
-		if (result != S_OK)
-		{
-			fprintf(stderr, "Failed to enable video input. Is another application using the card?\n");
-			goto bail;
-		}
-
-		result = g_deckLinkInput->EnableAudioInput(bmdAudioSampleRate48kHz, g_config.m_audioSampleDepth, g_config.m_audioChannels);
-		if (result != S_OK)
-			goto bail;
-
 		fprintf(stderr, "Starting Capture\n");
 	    result = g_deckLinkInput->StartStreams(); // VideoInputFrameArrived, VideoInputFormatChanged will be called as different threads from now on (capturing .....)
 		if (result != S_OK)
 			goto bail;
 
-		// All Okay.
 		exitStatus = 0;
 
 		pthread_mutex_lock(&g_sleepMutex);
@@ -514,9 +504,10 @@ int main(int argc, char *argv[])
 
 		fprintf(stderr, "Stopping Capture\n");
 		g_deckLinkInput->StopStreams();
-		g_deckLinkInput->DisableAudioInput();
-		g_deckLinkInput->DisableVideoInput();
+		g_deckLinkInput->FlushStreams(); // ???
 	}
+	g_deckLinkInput->DisableAudioInput();
+	g_deckLinkInput->DisableVideoInput();
 
 bail:
 	if (displayModeName != NULL)
