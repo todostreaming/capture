@@ -46,7 +46,8 @@ BMDConfig::BMDConfig() :
 	m_deckLinkName(),
 	m_displayModeName(),
 	m_video_input_num(1), //.TSTS
-	m_audio_input_num(1)  //.TSTS
+	m_audio_input_num(1),  //.TSTS
+	m_avdelay(200) //.TSTS 200 ms
 {
 }
 
@@ -64,7 +65,7 @@ bool BMDConfig::ParseArguments(int argc,  char** argv)
 	int		ch;
 	bool	displayHelp = false;
 
-	while ((ch = getopt(argc, argv, "d:?h3c:s:v:a:m:n:p:t:V:A:")) != -1)
+	while ((ch = getopt(argc, argv, "d:?h3c:s:v:a:m:n:p:t:V:A:D:")) != -1)
 	{
 		switch (ch)
 		{
@@ -74,6 +75,10 @@ bool BMDConfig::ParseArguments(int argc,  char** argv)
 
 			case 'A':
 				m_audio_input_num = atoi(optarg); //.TSTS
+				break;
+
+			case 'D':
+				m_avdelay = atoi(optarg); //.TSTS
 				break;
 
 			case 'd':
@@ -397,6 +402,7 @@ bail:
 		"    		1: Analog\n"
 		"    		2: Embedded (HDMI/SDI)\n"
 		"    		3: AES/EBU\n"
+		"    -D <avdelay>         A-V max delay in milliseconds (default 200 ms)\n"
 		"    -v <filename>        Filename raw video will be written to\n"
 		"    -a <filename>        Filename raw audio will be written to\n"
 		"    -c <channels>        Audio Channels (2, 8 or 16 - default is 2)\n"
