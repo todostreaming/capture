@@ -506,10 +506,12 @@ int main(int argc, char *argv[])
 		pthread_cond_wait(&g_sleepCond, &g_sleepMutex); // will wait sleeping there until this happens: pthread_cond_signal(&g_sleepCond);
 		pthread_mutex_unlock(&g_sleepMutex);
 
-		fprintf(stderr, "Stopping Capture\n");
-		g_deckLinkInput->StopStreams();
+		fprintf(stderr, "Flushing Capture\n");
+		g_deckLinkInput->PauseStreams();
 		g_deckLinkInput->FlushStreams(); // ???
 	}
+	fprintf(stderr, "Stopping Capture\n");
+	g_deckLinkInput->StopStreams();
 	g_deckLinkInput->DisableAudioInput();
 	g_deckLinkInput->DisableVideoInput();
 
