@@ -146,7 +146,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
     BMDTimeValue    packetTime = 0;
     static int64_t  video_pts, audio_pts;
 
-    alarm (TIMEOUT);
+    //alarm (TIMEOUT);
 	// Handle Video Frame
 	if (videoFrame)
 	{
@@ -243,6 +243,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 	fprintf(stderr, "A-V=%ld\n", audio_pts - video_pts); // A/V sync < 200 ms plz !!!
 	if (abs(audio_pts - video_pts) > g_config.m_avdelay) {
+		fprintf(stderr, "AV sync > %d\n", g_config.m_avdelay);
 		//g_do_exit = true;
 		//pthread_cond_signal(&g_sleepCond);
 	}
