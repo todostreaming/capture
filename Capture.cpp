@@ -52,6 +52,8 @@ static FILE 			*fp_audio = NULL;
 static FILE 			*fp_video = NULL;
 
 static unsigned long	g_frameCount = 0;
+static BMDTimeValue 	frameDuration = 0;
+
 
 void closefiles(){
 
@@ -142,9 +144,9 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
     BMDTimeScale    timeScale = 1000; // milliseconds (ticks per second)
     BMDTimeValue    frameTime = 0;
-    BMDTimeValue    frameDuration = 0;
     BMDTimeValue    packetTime = 0;
     static int64_t  video_pts, audio_pts;
+    static int64_t	videoframe_cont = 0, audioframe_cont = 0;
 
     //alarm (TIMEOUT);
 	// Handle Video Frame
@@ -153,6 +155,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		videoFrame->AddRef();
 		videoFrame->GetStreamTime(&frameTime, &frameDuration, timeScale);
 		video_pts = frameTime;
+		videoframe_cont++;
 
         if (fp_video == NULL)
         {
@@ -223,6 +226,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	{
 		audioFrame->GetPacketTime(&packetTime, timeScale);
 		audio_pts = packetTime;
+		audioframe_cont++;
 
         if (fp_audio == NULL)
         {
@@ -241,7 +245,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 	}
 
-	fprintf(stderr, "A-V=%ld\n", audio_pts - video_pts); // A/V sync < 200 ms plz !!!
+	fprintf(stderr, "A-VPTS(ms)=%ld A-VDelay(ms)=%ld\n", audio_pts - video_pts, (audioframe_cont - videoframe_cont) * frameDuration); // A/V sync < 200 ms plz !!!
 	if (abs(audio_pts - video_pts) > g_config.m_avdelay) {
 		fprintf(stderr, "AV sync > %d\n", g_config.m_avdelay);
 		//g_do_exit = true;
