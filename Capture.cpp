@@ -152,7 +152,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	// Handle Video Frame
 	if (videoFrame)
 	{
-		videoFrame->AddRef();
+		//videoFrame->AddRef();
 		videoFrame->GetStreamTime(&frameTime, &frameDuration, timeScale);
 		video_pts = frameTime;
 		videoframe_cont++;
@@ -218,7 +218,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			rightEyeFrame->Release();
 
 		g_frameCount++;
-		videoFrame->Release();
+		//videoFrame->Release();
 	}
 
 	// Handle Audio Frame
