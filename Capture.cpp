@@ -38,8 +38,6 @@
 #include "Capture.h"
 #include "Config.h"
 
-#define TIMEOUT			1   // 1 second timeout
-
 static pthread_mutex_t	g_sleepMutex;
 static pthread_cond_t	g_sleepCond;
 static bool				g_do_exit = false;
@@ -148,11 +146,10 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
     static int64_t  video_pts, audio_pts;
     static int64_t	videoframe_cont = 0, audioframe_cont = 0;
 
-    //alarm (TIMEOUT);
 	// Handle Video Frame
 	if (videoFrame)
 	{
-		//videoFrame->AddRef();
+		videoFrame->AddRef();
 		videoFrame->GetStreamTime(&frameTime, &frameDuration, timeScale);
 		video_pts = frameTime;
 		videoframe_cont++;
@@ -218,7 +215,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			rightEyeFrame->Release();
 
 		g_frameCount++;
-		//videoFrame->Release();
 	}
 
 	// Handle Audio Frame
@@ -244,6 +240,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
         fflush (fp_audio);
 
 	}
+
+	if (videoFrame) videoFrame->Release();
 
 	fprintf(stderr, "A-VPTS(ms)=%ld A-VDelay(ms)=%ld\n", audio_pts - video_pts, (audioframe_cont - videoframe_cont) * frameDuration); // A/V sync < 200 ms plz !!!
 	if (abs(audio_pts - video_pts) > g_config.m_avdelay) {
@@ -497,8 +495,7 @@ int main(int argc, char *argv[])
 		goto bail;
 
 	// Block main thread until signal occurs
-    signal (SIGALRM, alarm_handler);
-	while (!g_do_exit)
+ 	while (!g_do_exit)
 	{
 		fprintf(stderr, "Starting Capture\n");
 	    result = g_deckLinkInput->StartStreams(); // VideoInputFrameArrived, VideoInputFormatChanged will be called as different threads from now on (capturing .....)
