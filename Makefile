@@ -29,8 +29,19 @@ SDK_PATH=./include
 CFLAGS=-Wno-multichar -I $(SDK_PATH) -fno-rtti
 LDFLAGS=-lm -ldl -lpthread
 
-Capture: Capture.cpp Config.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp
-	$(CC) -o Capture Capture.cpp Config.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp $(CFLAGS) $(LDFLAGS)
+prefix ?= /usr
+bindir ?= $(prefix)/bin
+
+PROGRAMS = capture
+
+all: $(PROGRAMS)
+
+capture: Capture.cpp Config.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp
+	$(CC) -o capture Capture.cpp Config.cpp $(SDK_PATH)/DeckLinkAPIDispatch.cpp $(CFLAGS) $(LDFLAGS)
 
 clean:
-	rm -f Capture
+	-rm -f $(PROGRAMS)
+
+install: all
+	mkdir -p $(DESTDIR)/$(bindir)
+	cp $(PROGRAMS) $(DESTDIR)/$(bindir)
