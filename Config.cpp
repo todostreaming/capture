@@ -47,7 +47,7 @@ BMDConfig::BMDConfig() :
 	m_displayModeName(),
 	m_video_input_num(1), //.TSTS
 	m_audio_input_num(1),  //.TSTS
-	m_avdelay(200) //.TSTS 200 ms
+	m_avdelay(3) //.TSTS 3 ms
 {
 }
 
@@ -402,7 +402,7 @@ bail:
 		"    		1: Analog\n"
 		"    		2: Embedded (HDMI/SDI)\n"
 		"    		3: AES/EBU\n"
-		"    -D <avdelay>         A-V max delay in milliseconds (default 200 ms)\n"
+		"    -D <avdelay>         A-V max delay in milliseconds (default 3 ms)\n"
 		"    -v <filename>        Filename raw video will be written to\n"
 		"    -a <filename>        Filename raw audio will be written to\n"
 		"    -c <channels>        Audio Channels (2, 8 or 16 - default is 2)\n"

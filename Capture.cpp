@@ -252,7 +252,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	if (abs(audio_pts - video_pts) > g_config.m_avdelay) {
 		fprintf(stderr, "AV sync > %d\n", g_config.m_avdelay);
 		//g_do_exit = true;
-		//pthread_cond_signal(&g_sleepCond);
+		pthread_cond_signal(&g_sleepCond);
 	}
 
 	if (g_config.m_maxFrames > 0 && videoFrame && g_frameCount >= g_config.m_maxFrames)

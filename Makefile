@@ -44,4 +44,4 @@ clean:
 
 install: all
 	mkdir -p $(DESTDIR)/$(bindir)
-	cp $(PROGRAMS) $(DESTDIR)/$(bindir)
+	cp -f $(PROGRAMS) $(DESTDIR)/$(bindir)
