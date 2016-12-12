@@ -248,9 +248,16 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 
 	if (videoFrame) videoFrame->Release();
 
-	fprintf(stderr, "A-VPTS(ms)=%ld A-VDelay(ms)=%ld A/VFail:%ld/%ld\n", audio_pts - video_pts, (audioframe_cont - videoframe_cont) * frameDuration, audiofail_cont, videofail_cont); // A/V sync < 200 ms plz !!!
+	fprintf(stderr, "A-VPTS(ms)=%ld A-VDelay(ms)=%ld\n", audio_pts - video_pts, (audioframe_cont - videoframe_cont) * frameDuration); // A/V sync < 200 ms plz !!!
+
+	if ((videofail_cont + audiofail_cont) > 3 ) {
+		fprintf(stderr, "FLUSHING\n");
+		g_do_exit = true;
+		pthread_cond_signal(&g_sleepCond);
+	}
+
 	if (abs(audio_pts - video_pts) > g_config.m_avdelay) {
-		fprintf(stderr, "AV sync > %d\n", g_config.m_avdelay);
+		fprintf(stderr, "AVsync > %d\n", g_config.m_avdelay);
 		//g_do_exit = true;
 		pthread_cond_signal(&g_sleepCond);
 	}
