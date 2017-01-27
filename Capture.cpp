@@ -50,6 +50,7 @@ static FILE 			*fp_audio = NULL;
 static FILE 			*fp_video = NULL;
 
 static unsigned long	g_frameCount = 0;
+static unsigned long	g_framesDropped = 0;
 static BMDTimeValue 	frameDuration = 0;
 
 
@@ -150,7 +151,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	// Handle Video Frame
 	if (videoFrame)
 	{
-		videoFrame->AddRef();
+		//videoFrame->AddRef();
 		videoFrame->GetStreamTime(&frameTime, &frameDuration, timeScale);
 		video_pts = frameTime;
 		videoframe_cont++;
@@ -181,8 +182,14 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		{
 			video_signal = false;
 			fprintf(stderr,"Video captured (#%lu) - No input signal detected\n", g_frameCount);
+			g_framesDropped++;
 		}else{
+			if ((g_framesDropped > 600) && (video_signal == false)) { // recovering image when gone beyond 600 frames could async a/v
+				g_do_exit = true;
+				pthread_cond_signal(&g_sleepCond);
+			}
 			video_signal = true;
+			g_framesDropped = 0;
 		}
 		const char *timecodeString = NULL;
 		if (g_config.m_timecodeFormat != 0)
@@ -246,7 +253,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		audiofail_cont++;
 	}
 
-	if (videoFrame) videoFrame->Release();
+	//if (videoFrame) videoFrame->Release();
 
 	fprintf(stderr, "A-VPTS(ms)=%ld A-VDelay(ms)=%ld\n", audio_pts - video_pts, (audioframe_cont - videoframe_cont) * frameDuration); // A/V sync < 200 ms plz !!!
 
