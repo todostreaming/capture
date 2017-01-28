@@ -184,7 +184,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			fprintf(stderr,"Video captured (#%lu) - No input signal detected\n", g_frameCount);
 			g_framesDropped++;
 		}else{
-			if ((g_framesDropped > 600) && (video_signal == false)) { // recovering image when gone beyond 600 frames could async a/v
+			if (g_framesDropped > (unsigned long) (3 * timeScale / frameDuration)) { // recovering image when gone beyond 3 seconds could async a/v
 				g_do_exit = true;
 				pthread_cond_signal(&g_sleepCond);
 			}
