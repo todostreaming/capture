@@ -139,7 +139,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 	void*								frameBytes;
 	void*								audioFrameBytes;
 
-    bool video_signal;
+    static bool video_signal;
 
     BMDTimeScale    timeScale = 1000; // milliseconds (ticks per second)
     BMDTimeValue    frameTime = 0;
